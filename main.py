@@ -1,54 +1,56 @@
 import json
-import sys
 import requests
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup
+
+links = {
+    "Информационные системы и технологии, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o230400.htm"
+    # "Стандартизация и метрология, контракт": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OK/o221700k.htm",
+    # "Экология и природопользование, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o022000.htm",
+    # "Картография и геоинформатика, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o021300.htm",
+    # "Информационная безопасность, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o090900.htm",
+    # "Приборостроение, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o200100.htm",
+    # "Оптотехника, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o200400.htm",
+    # "Землеустройство и кадастры, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o120700.htm",
+    # "Геодезия и дистанционное зондирование, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o120100.htm",
+    # "Фотоника и оптоинформатика, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o200300.htm",
+    # "Боеприпасы и взрыватели, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o170100.htm",
+    # "Прикладная геодезия, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o120401.htm",
+    # "Горное дело, бюджет": "https://sgugit.ru/upload/to-the-entrant/announcements-reception-of-2020/lists-of-students/ranking-lists-of-applicants/OB/o130400.htm",
+
+}
+
+students = dict()
 
 
-def get_url():
-    return sys.argv[1]
+def update_all_links_cache():
+    students.clear()
+    for key, value in links.items():
+        update_one_link(value, key)
 
 
-def is_valid_row(row):
-    for ch in row.children:
-        if not isinstance(ch, NavigableString):
-            if 'class' in ch.attrs and ch["class"][0] == 'R7C1':
-                return True
+def update_one_link(link_url, link_name):
+    res = requests.get(link_url)
+    soup = BeautifulSoup(res.content, "lxml")
+    for item in soup.find_all(class_="R0")[5:]:
+        row_fields = item.text.split("\n")
+        snils = row_fields[3]
+        studentData = {'order': int(row_fields[2]), 'snils': snils, 'consent': row_fields[6] == 'Да',
+                   'isOriginals': row_fields[5] == 'Да', 'totalScore': int(row_fields[7]), 'score': int(row_fields[8]),
+                   'description': row_fields[9], 'isAdvantaged': row_fields[16] == 'Да'}
+
+        if snils not in students.keys():
+            students[snils] = {}
+
+        students[snils][link_name] = studentData
 
 
-def int_or_default(value, default=0):
-    return int(value) if value else default
+def find_student_data(snils):
+    return students[snils]
 
 
-result = list()
+update_all_links_cache()
 
-url = get_url()
-response = requests.get(url)
-response.encoding = 'utf-8'
-soup = BeautifulSoup(response.text, 'html.parser')
 
-tableRows = soup.find_all('tr')
-
-for row in tableRows:
-    if not is_valid_row(row):
-        continue
-
-    row_childs = row.findAll('td')
-
-    data = {
-        'order': int_or_default(row_childs[1].text),
-        'snils': row_childs[2].text,
-        'isOriginals': row_childs[4].text == 'Да',
-        'approved': row_childs[5].text == 'Да',
-        'totalScore': int_or_default(row_childs[6].text),
-        'score': int_or_default(row_childs[7].text),
-        'description': row_childs[8].text,
-        'examScore': int_or_default(row_childs[9].text),
-        'individualScore': int_or_default(row_childs[10].text),
-        'isAdvantaged': row_childs[9].text == 'Да'
-    }
-    result.append(data)
-
-json_string = json.dumps(result, ensure_ascii=False).encode('utf-8')
-f = open("demofile2.json", "x")
-f.write(json_string.decode())
-f.close()
+with open('db.json', 'w', encoding="utf-8") as file:
+    jsonStr = json.dumps(students, ensure_ascii=False, indent=4)
+    file.write(jsonStr)
