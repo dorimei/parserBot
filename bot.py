@@ -9,7 +9,7 @@ import argparse
 
 import emoji
 
-from main import find_student_data, update_all_links_cache
+from parser import find_student_data, update_all_links_cache
 
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher.filters import Text
@@ -20,9 +20,13 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("token", help="Telegram bot API token", type=str)
 parser.add_argument("-v", "--verbose", help="Enables debug output", action='store_true')
+parser.add_argument("-s", "--skip-updates", help="Enable or disable skipping updates from telegram bot chat",
+                    action='store_true')
 parser.add_argument("-i", "--interval", help="Updates interval in seconds", default=30, type=int)
+parser.add_argument("-l", "--license-agreement-url", help="Url of license agreement", default="", type=str)
 
 args = parser.parse_args()
+
 
 # endregion
 
@@ -48,11 +52,11 @@ registered_clients = {
     #     "telegram_user_id": 1234123123213
     #     "programs": [
     #         {
-    #             "program_name": "ИСИТ ЕПТА",
+    #             "program_name": "ИСИТ",
     #             "order": 12
     #         },
     #         {
-    #             "program_name": "ИСИТ ЕПТА",
+    #             "program_name": "ИСИТ",
     #             "order": 12
     #         },
     #
@@ -66,22 +70,33 @@ registered_clients = {
 @dp.message_handler(commands='start')
 async def start(message: types.Message):
     logging.info(message)
-    await message.answer('Готов к труду и обороне', reply_markup=reply_keyboard())
+    await message.answer(
+        'Приветствую! Я умею проверять рейтинговые списки на зачисление в СГУГиТ и отправляю тебе уведомления, когда твоя позиция изменится на каком-либо направлении. Давай начнем, мне нужно знать номер твоего СНИЛС. Чтобы ввести его, нажми соответствующую кнопку',
+        reply_markup=reply_keyboard())
 
 
 @dp.message_handler(Text(equals="Добавить новый СНИЛС"))
 async def find_student_info(message: types.Message):
     global mode
-    await bot.send_message(message.from_user.id, "Напиши свой снилс")
+    await bot.send_message(message.from_user.id, "Напиши свой снилс", reply_markup=None)
     mode = 'input_snils'
+
+
+@dp.message_handler(Text(equals="О боте"))
+async def about_bot(message: types.Message):
+    await bot.send_message(message.from_user.id,
+                           "Я умею проверять рейтинговые списки на зачисление в СГУГиТ и отправляю тебе уведомления, когда твоя позиция изменится на каком-либо направлении. \nЛицензионное соглашение: https://staticdocs.petproj.core.borisof.ru/konkurs-visor-license-agreement.html",
+                           reply_markup=reply_keyboard())
 
 
 @dp.message_handler(Text(equals="Узнать свою позицию"))
 async def position_check(message: types.Message):
     response = get_formatted_student_data_by_chat_id(message.from_user.id)
     if response is None:
-        await message.answer("Для начала работы с ботом вам необходимо внести свой снилс",
-                             reply_markup=reply_keyboard(), parse_mode='Markdown')
+        await message.answer(
+            "Мне нужно знать ваш снилс, чтобы начать мониторинг рейтинговых списков. Давай сделаем это",
+            reply_markup=reply_keyboard(), parse_mode='Markdown')
+        await find_student_info(message)
         return
 
     await message.answer(response, reply_markup=reply_keyboard(), parse_mode='Markdown')
@@ -123,9 +138,10 @@ async def handle_input(message: types.Message):
 
 
 def reply_keyboard():
-    start_buttons = ["Узнать свою позицию", "Добавить новый СНИЛС", "О боте"]
+    start_buttons = ["Узнать свою позицию", "Добавить/Изменить СНИЛС", "О боте"]
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     keyboard.add(*start_buttons)
+    return keyboard
 
 
 def find_student_data_by_chat_id(chat_id):
@@ -147,7 +163,7 @@ def get_formatted_student_data_by_chat_id(chat_id):
         answer += f"*Направление подготовки: {str(key)}*\n " \
                   f":sports_medal: Текущая позиция в списке: {str(value['order'])} \n" \
                   f" {':check_mark_button:  Подлинник предоставлен' if str(value['isOriginals']) else ':cross_mark: Подлинник отсутствует'} \n" \
-                  f" {':check_mark_button:  Подлинник предоставлен' if str(value['isOriginals']) else ':cross_mark: Подлинник отсутствует'} \n"
+                  f" {':check_mark_button:  Преимущественное право предоставлено' if value['isAdvantaged'] else ':cross_mark: Преимущественное право не предоставлено'} \n"
 
     return emoji.emojize(answer)
 
@@ -206,7 +222,7 @@ def main():
     s = sched.scheduler(time.time, time.sleep)
     s.enter(int(args.interval), 1, cron_task)
     s.run()
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp, skip_updates=args.skip_updates)
     logging.info("Остановка бота...")
 
 
