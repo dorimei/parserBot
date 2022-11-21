@@ -1,6 +1,7 @@
 import json
 import logging
 import sched
+import signal
 import time
 import atexit
 import asyncio
@@ -9,7 +10,7 @@ import argparse
 
 import emoji
 
-from parser import find_student_data, update_all_links_cache
+from parser import find_student_data, update_all_links_cache, init_links
 
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher.filters import Text
@@ -20,13 +21,14 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("token", help="Telegram bot API token", type=str)
 parser.add_argument("-v", "--verbose", help="Enables debug output", action='store_true')
-parser.add_argument("-s", "--skip-updates", help="Enable or disable skipping updates from telegram bot chat",
+parser.add_argument("-u", "--skip-updates", help="Enable or disable skipping updates from telegram bot chat",
                     action='store_true')
 parser.add_argument("-i", "--interval", help="Updates interval in seconds", default=30, type=int)
 parser.add_argument("-l", "--license-agreement-url", help="Url of license agreement", default="", type=str)
+parser.add_argument("-n", "--links-file", help="Path to links file", default="links.txt", type=str)
+parser.add_argument("-s", "--state-file", help="Path to saved state file", default="state.txt", type=str)
 
 args = parser.parse_args()
-
 
 # endregion
 
@@ -131,6 +133,8 @@ async def handle_input(message: types.Message):
 
     mode = None
 
+    save_state()
+
     await bot.send_message(message.from_user.id, get_formatted_student_data_by_chat_id(chat_id), parse_mode='Markdown')
 
 
@@ -185,6 +189,7 @@ def cron_task():
                 old_order_data["order"] = new_order
                 loop = asyncio.get_event_loop()
                 loop.run_until_complete(send_msg(str(key), f"Ваша позиция изменилась с {old_order} на {new_order}"))
+                save_state()
 
 
 async def send_msg(chat_id, msg):
@@ -192,10 +197,10 @@ async def send_msg(chat_id, msg):
 
 
 @atexit.register
-def exit_handler():
+def save_state():
     logging.info("Получена команда на закрытие. Запись в файл текущего состояния...")
     # Открываем файл для записи
-    file = open('state.json', 'w')
+    file = open(args.state_file, 'w')
     jsonStr = json.dumps(registered_clients, ensure_ascii=False, indent=4)
     file.write(jsonStr)
     file.close()
@@ -205,7 +210,7 @@ def exit_handler():
 def load_state():
     global registered_clients
     try:
-        with open('state.json') as json_file:
+        with open(args.state_file) as json_file:
             registered_clients = json.load(json_file)
             logging.info("Состояние восстановлено")
     except:
@@ -213,12 +218,14 @@ def load_state():
 
 
 def main():
-    logging.info("Запуск конской хуеты...")
+    logging.info("Чтение списка ссылок...")
+    init_links(args.links_file)
     logging.info("Восстановление предыдущего состояния")
     load_state()
     logging.info("Парсинг текущих рейтинговых списков")
     update_all_links_cache()
     logging.info("Рейтинговые списки получены, запуск бота...")
+    signal.signal(signal.SIGTERM, save_state)
     s = sched.scheduler(time.time, time.sleep)
     s.enter(int(args.interval), 1, cron_task)
     s.run()

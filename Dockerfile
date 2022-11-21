@@ -17,10 +17,16 @@ FROM python:3.9-slim
 WORKDIR /app
 
 ENV API_TOKEN ""
+ENV STATE_FILE "/app/files/state.json"
+ENV LINKS_FILE "/app/files/links.txt"
+ENV LANG ru_RU.UTF-8
+ENV LANGUAGE ru_RU:ru
+ENV LC_ALL ru_RU.UTF-8
 
-COPY --from=builder /app/wheels /wheels
 COPY --from=builder /app/wheels /wheels
 COPY --from=builder /app/requirements.txt .
+COPY . .
+COPY ./links.txt /app/files/links.txt
 
 RUN pip install --no-cache /wheels/*
-ENTRYPOINT python bot.py -s -v $API_TOKEN
+ENTRYPOINT python bot.py -s $STATE_FILE -n $LINKS_FILE $API_TOKEN

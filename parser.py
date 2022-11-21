@@ -6,8 +6,8 @@ links = {}
 students = dict()
 
 
-def init():
-    with open("links.txt", 'r', encoding='UTF-8') as file:
+def init_links(links_file="links.txt"):
+    with open(links_file, 'r', encoding='UTF-8') as file:
         while line := file.readline().rstrip():
             row = line.split(";")
             links[row[0]] = row[1]
@@ -41,6 +41,3 @@ def update_one_link(link_url, link_name):
 
 def find_student_data(snils):
     return students[snils]
-
-
-init()
